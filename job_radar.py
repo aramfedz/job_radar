@@ -2,7 +2,9 @@
 """Job Radar: baja vacantes de TA / Recruiting / People & Culture / HR desde
 paginas de carreras (Greenhouse, Lever, Ashby, SmartRecruiters, Workday)
 y genera index.html con filtros. Solo libreria estandar (Python 3.9+)."""
-import json, re, time, urllib.request, pathlib
+import json, re, time, urllib.request, urllib.error, pathlib, html, socket
+from html.parser import HTMLParser
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date
 from urllib.parse import urlparse, quote
 
@@ -124,38 +126,117 @@ TITLE_RE = re.compile(
     r"gesti[oó]n del talento|capital humano)\b")
 WORKDAY_TERMS = ["recruiter", "talent acquisition", "human resources", "people"]
 # ---------------------------------------------------------------------------
-UA = "job-radar/2.0"
-def http(url, data=None):
-    h = {"User-Agent": UA, "Accept": "application/json"}
+UA = "job-radar/3.0 (+country-wide Costa Rica HR/TA radar)"
+class LinkParser(HTMLParser):
+    """Extract links without depending on fragile regular expressions."""
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.links, self._href, self._text = [], None, []
+    def handle_starttag(self, tag, attrs):
+        if tag.lower() == "a":
+            self._href = dict(attrs).get("href")
+            self._text = []
+    def handle_data(self, data):
+        if self._href is not None:
+            self._text.append(data)
+    def handle_endtag(self, tag):
+        if tag.lower() == "a" and self._href is not None:
+            self.links.append((self._href, " ".join(self._text).strip()))
+            self._href, self._text = None, []
+
+
+def request(url, data=None, accept="application/json", timeout=30):
+    headers = {"User-Agent": UA, "Accept": accept, "Accept-Language": "en-US,en;q=0.8,es;q=0.7"}
+    body = None
     if data is not None:
-        h["Content-Type"] = "application/json"
-        data = json.dumps(data).encode()
-    return json.load(urllib.request.urlopen(urllib.request.Request(url, data, h), timeout=30))
+        headers["Content-Type"] = "application/json"
+        body = json.dumps(data).encode("utf-8")
+    req = urllib.request.Request(url, body, headers)
+    return urllib.request.urlopen(req, timeout=timeout)
 
-def text(url):
-    return urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": UA}), timeout=30).read().decode("utf-8", "ignore")
 
-def detect(url):
+def http(url, data=None):
+    with request(url, data) as response:
+        return json.load(response)
+
+
+def text(url, timeout=30):
+    with request(url, accept="text/html,application/xhtml+xml,application/json;q=0.8,*/*;q=0.5", timeout=timeout) as response:
+        charset = response.headers.get_content_charset() or "utf-8"
+        return response.read().decode(charset, "ignore"), response.geturl(), response.status
+
+
+def detect(url, body=""):
+    """Detect ATS using final URL plus page fingerprints and embedded links."""
     u = urlparse(url)
-    h, parts = u.netloc.lower(), [x for x in u.path.split("/") if x]
-    for key, name in [("myworkdayjobs.com", "workday"), ("taleo.net", "taleo"), ("oraclecloud.com", "oracle")]:
-        if key in h:
+    host, parts = u.netloc.lower(), [x for x in u.path.split("/") if x]
+    direct = [("myworkdayjobs.com", "workday"), ("taleo.net", "taleo"),
+              ("oraclecloud.com", "oracle"), ("successfactors.com", "successfactors"),
+              ("jobs2web.com", "successfactors")]
+    for key, name in direct:
+        if key in host:
             return name, url
-    for key, name in [("greenhouse.io", "greenhouse"), ("lever.co", "lever"), ("ashbyhq.com", "ashby"),
-                      ("smartrecruiters.com", "smartrecruiters"), ("workable.com", "workable")]:
-        if key in h and parts:
+    for key, name in [("greenhouse.io", "greenhouse"), ("lever.co", "lever"),
+                      ("ashbyhq.com", "ashby"), ("smartrecruiters.com", "smartrecruiters"),
+                      ("workable.com", "workable")]:
+        if key in host and parts:
+            if name == "greenhouse" and parts[0] in ("embed", "boards") and len(parts) > 1:
+                return name, parts[1]
+            if name == "smartrecruiters" and parts[0] == "company" and len(parts) > 1:
+                return name, parts[1]
             return name, parts[0]
-    if "icims.com" in h:
+    if "icims.com" in host:
         return "icims", url
-    if "recruitee.com" in h:
-        return "recruitee", h.split(".")[0]
+    if "recruitee.com" in host:
+        return "recruitee", host.split(".")[0]
+    low = html.unescape(body).lower()
+    patterns = [
+        (r'https?://[^"\'<> ]+\.myworkdayjobs\.com/[^"\'<> ]+', "workday"),
+        (r'https?://[^"\'<> ]+\.taleo\.net/careersection/[^"\'<> ]+', "taleo"),
+        (r'https?://[^"\'<> ]+\.oraclecloud\.com/[^"\'<> ]*/sites/[^"\'<> ]+', "oracle"),
+        (r'https?://[^"\'<> ]+(?:successfactors\.com|jobs2web\.com)/[^"\'<> ]+', "successfactors"),
+        (r'https?://(?:boards|job-boards)\.greenhouse\.io/([^/"\'<>?# ]+)', "greenhouse"),
+        (r'https?://jobs\.lever\.co/([^/"\'<>?# ]+)', "lever"),
+        (r'https?://jobs\.ashbyhq\.com/([^/"\'<>?# ]+)', "ashby"),
+        (r'https?://jobs\.smartrecruiters\.com/([^/"\'<>?# ]+)', "smartrecruiters"),
+        (r'https?://apply\.workable\.com/([^/"\'<>?# ]+)', "workable"),
+        (r'https?://([^./"\'<> ]+)\.recruitee\.com', "recruitee"),
+        (r'https?://[^"\'<> ]+\.icims\.com/jobs/[^"\'<> ]*', "icims")]
+    for pattern, name in patterns:
+        m = re.search(pattern, low, re.I)
+        if m:
+            value = m.group(1) if m.lastindex else html.unescape(m.group(0))
+            return name, value.rstrip("/.,)")
     return None, url
+
+
+def discover(url):
+    """Resolve redirects and inspect a career page for a supported ATS."""
+    body, final_url, status = text(url, timeout=20)
+    ats, token = detect(final_url, body)
+    if ats:
+        return ats, token, final_url, status
+    parser = LinkParser()
+    parser.feed(body[:1500000])
+    from urllib.parse import urljoin
+    candidates = []
+    for href, label in parser.links:
+        absolute = urljoin(final_url, href)
+        a, t = detect(absolute)
+        if a:
+            candidates.append((a, t, absolute))
+    if candidates:
+        # Prefer full ATS job boards over single job links.
+        candidates.sort(key=lambda x: ("/job/" in x[2].lower(), len(x[2])))
+        a, t, found_url = candidates[0]
+        return a, t, found_url, status
+    return None, final_url, final_url, status
 
 def fetch(ats, tok, only_cr):
     if ats == "auto":
         ats, tok = detect(tok)
         if not ats:
-            raise ValueError("ATS no soportado (iCIMS, SuccessFactors y Phenom no tienen API publica)")
+            raise ValueError("ATS no soportado o no detectado")
     return fetch_ats(ats, tok, only_cr)
 
 def terms(only_cr):
@@ -268,23 +349,65 @@ def fetch_ats(ats, tok, only_cr):
         return [dict(title=o["title"], url=o["careers_url"], wt="remote" if o.get("remote") else "",
                      loc=", ".join(x for x in [o.get("city"), o.get("country")] if x) or o.get("location") or "")
                 for o in d.get("offers", [])]
+    if ats == "successfactors":
+        # SuccessFactors has tenant-specific career pages. We paginate the public
+        # HTML and parse job links semantically; no private API or credentials.
+        base = tok
+        found, seen_pages = {}, set()
+        for term in terms(only_cr):
+            for startrow in range(0, 500, 25):
+                sep = "&" if "?" in base else "?"
+                url = f"{base}{sep}q={quote(term)}&startrow={startrow}"
+                page, final, _ = text(url)
+                signature = hash(page)
+                if signature in seen_pages:
+                    break
+                seen_pages.add(signature)
+                parser = LinkParser(); parser.feed(page)
+                added = 0
+                from urllib.parse import urljoin
+                for href, label in parser.links:
+                    absolute = urljoin(final, href)
+                    if not re.search(r"/(?:job|jobdetail|careersection)/", absolute, re.I):
+                        continue
+                    title = re.sub(r"\s+", " ", label).strip()
+                    if not title or len(title) < 4:
+                        continue
+                    jid = re.search(r"(?:job|jobid|jobId|jobReqId)[=/\-](\d+)", absolute, re.I)
+                    key = jid.group(1) if jid else absolute
+                    context_at = page.lower().find(href.lower())
+                    context = re.sub(r"<[^>]+>", " ", page[max(0, context_at-500):context_at+1200])
+                    context = html.unescape(re.sub(r"\s+", " ", context))
+                    found[key] = dict(title=title, loc=context[:500], url=absolute, wt="")
+                    added += 1
+                if added == 0:
+                    break
+                time.sleep(0.2)
+        return list(found.values())
     if ats == "icims":
         base = f"https://{urlparse(tok).netloc}"
         found = {}
         for term in terms(only_cr):
-            for pg in range(0, 20):
-                h = text(f"{base}/jobs/search?ss=1&searchKeyword={quote(term)}&in_iframe=1&pr={pg}")
-                links = list(re.finditer(r'<a[^>]+href="([^"]*?/jobs/(\d+)/[^"]*?/job[^"]*)"[^>]*>(.*?)</a>', h, re.S))
-                for m in links:
-                    url, jid, inner = m.groups()
-                    title = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", inner)).strip()
-                    lm = re.search(r"[^<>\n]*(?:Costa Rica|CR-|CRI)[^<>\n]*", h[m.end():m.end() + 1200])
-                    if title and jid not in found:
-                        found[jid] = dict(title=title, wt="", url=url if url.startswith("http") else base + url,
-                                          loc=(lm.group(0).strip() if lm else ""))
-                if not links:
+            for pg in range(0, 40):
+                page, final, _ = text(f"{base}/jobs/search?ss=1&searchKeyword={quote(term)}&in_iframe=1&pr={pg}")
+                parser = LinkParser(); parser.feed(page)
+                added = 0
+                from urllib.parse import urljoin
+                for href, label in parser.links:
+                    m = re.search(r"/jobs/(\d+)/", href)
+                    if not m:
+                        continue
+                    title = re.sub(r"\s+", " ", label).strip()
+                    if not title:
+                        continue
+                    at = page.find(href)
+                    context = re.sub(r"<[^>]+>", " ", page[at:at + 1800])
+                    context = html.unescape(re.sub(r"\s+", " ", context)).strip()
+                    found[m.group(1)] = dict(title=title, wt="", url=urljoin(final, href), loc=context[:600])
+                    added += 1
+                if not added:
                     break
-                time.sleep(0.3)
+                time.sleep(0.2)
         return list(found.values())
     return []
 
@@ -298,7 +421,7 @@ def work_mode(j):
         return "onsite"
     return "unknown"
 
-CR_RX = re.compile(r"costa rica|\bcri\b|\bcr\b|heredia|escaz[uú]|ulloa|bel[eé]n|alajuela|coyol|cartago|pavas|la uruca|santa ana|san jos[eé]\s*[,-]\s*(cr|costa)")
+CR_RX = re.compile(r"costa\s*rica|\bcri\b|\bcr(?:i)?[-, ]|san\s+jos[eé](?!\s*,\s*(?:california|ca\b))|heredia|bel[eé]n|barreal|lagunilla|ulloa|alajuela|el\s+coyol|grecia|cartago|la\s+uni[oó]n|tres\s+r[ií]os|escaz[uú]|santa\s+ana|lindora|pavas|la\s+uruca|sabana|curridabat|moravia|guadalupe|desamparados|lim[oó]n|puntarenas|guanacaste|liberia|p[eé]rez\s+zeled[oó]n|san\s+carlos|ciudad\s+quesada", re.I)
 def is_cr(loc):
     return bool(CR_RX.search(loc.lower()))
 
@@ -336,8 +459,6 @@ TEMPLATE = r"""<!doctype html><html lang=es><meta charset=utf-8>
 <style>
 :root{--bg:#eef1ec;--sur:#fff;--ink:#12211b;--mut:#5d6c63;--line:#d9dfd6;--pri:#1b4332;--onpri:#fff;--red:#c8102e;
 --remote:#0b7a5a;--remote-bg:#d8f1e6;--hybrid:#8a5a00;--hybrid-bg:#fbebc4;--onsite:#2b4a8a;--onsite-bg:#dde6fa;--unknown:#5d6c63;--unknown-bg:#e6eae4}
-@media(prefers-color-scheme:dark){:root{--bg:#0f1914;--sur:#16231c;--ink:#e8efe9;--mut:#92a399;--line:#26382e;--pri:#10261b;--onpri:#e8efe9;--red:#ff6b81;
---remote:#7fe0b6;--remote-bg:#12382a;--hybrid:#f2c867;--hybrid-bg:#3a2d0c;--onsite:#9db8f5;--onsite-bg:#18284a;--unknown:#92a399;--unknown-bg:#1f2d25}}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 "Instrument Sans",system-ui,sans-serif}
 button,input,select{font:inherit;color:inherit}:focus-visible{outline:2px solid var(--remote);outline-offset:2px}
 header{background:var(--pri);color:var(--onpri);padding:34px 16px 30px}
@@ -368,7 +489,7 @@ border-radius:6px;padding:13px 16px;margin-bottom:8px;color:inherit;text-decorat
 .dir{margin-top:28px;border-top:1px solid var(--line);padding-top:14px}.dir summary{cursor:pointer;font-weight:600}
 #dirl h3{font-size:13px;font-weight:600;color:var(--mut);margin:16px 0 6px}
 #dirl .g{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:6px}
-#dirl a{padding:8px 10px;border:1px solid var(--line);border-radius:6px;background:var(--sur);color:inherit;text-decoration:none}#dirl a:hover{border-color:var(--remote)}
+#dirl a{position:relative;padding:8px 10px;border:1px solid var(--line);border-radius:6px;background:var(--sur);color:inherit;text-decoration:none}#dirl a:hover{border-color:var(--remote)} #dirl a.ok:after,#dirl a.error:after{content:"";position:absolute;right:8px;top:12px;width:7px;height:7px;border-radius:50%;background:var(--remote)}#dirl a.error:after{background:var(--red)}
 .st{display:grid;grid-template-columns:1.2fr .7fr 2fr;gap:8px;padding:7px 0;border-bottom:1px solid var(--line);font-size:14px}
 .empty{padding:48px 16px;text-align:center;color:var(--mut)}
 @media(max-width:800px){.wrap{grid-template-columns:1fr}aside{position:static}.opts{display:flex;flex-wrap:wrap;gap:6px}
@@ -420,40 +541,93 @@ render();
 </script></html>
 """
 
+def build_sources():
+    """Join configured connectors with every directory company, deduplicated."""
+    sources = {(name.lower(), tok): (ats, tok, name, only_cr, "configured")
+               for ats, tok, name, only_cr in COMPANIES}
+    directory_state = {}
+    explicit_names = {name.lower() for _, _, name, _ in COMPANIES}
+
+    def probe(entry):
+        name, url, province = entry
+        try:
+            ats, token, final, code = discover(url)
+            return entry, ats, token, final, "ok", f"HTTP {code}" + (f" · {ats}" if ats else " · ATS no detectado")
+        except Exception as exc:
+            return entry, None, url, url, "error", type(exc).__name__ + ": " + str(exc)[:70]
+
+    # Concurrent probes keep a country-wide directory practical.
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        futures = [pool.submit(probe, entry) for entry in DIRECTORY]
+        for future in as_completed(futures):
+            entry, ats, token, final, state, detail = future.result()
+            name, url, province = entry
+            directory_state[name] = [state, detail, final]
+            if ats and name.lower() not in explicit_names:
+                sources[(name.lower(), token)] = (ats, token, name, True, "directory")
+    return list(sources.values()), directory_state
+
+
 def main():
     root = pathlib.Path(__file__).parent
     sf = root / "seen.json"
     initial = not sf.exists()
-    seen = json.loads(sf.read_text()) if sf.exists() else {}
+    try:
+        seen = json.loads(sf.read_text(encoding="utf-8")) if sf.exists() else {}
+    except (ValueError, OSError):
+        seen = {}
     if isinstance(seen, list):
         seen = {u: date.today().isoformat() for u in seen}
+
     today, rows, status = date.today(), [], []
-    for ats, tok, name, only_cr in COMPANIES:
+    sources, directory_state = build_sources()
+    print(f"[info] {len(DIRECTORY)} paginas comprobadas; {len(sources)} fuentes ATS para extraer")
+
+    for ats, tok, name, only_cr, origin in sources:
         try:
             jobs = fetch(ats, tok, only_cr)
-        except Exception as e:
-            print(f"[skip] {name}: {e}")
-            status.append([name, "error", str(e)[:90]])
+        except Exception as exc:
+            message = type(exc).__name__ + ": " + str(exc)[:80]
+            print(f"[skip] {name}: {message}")
+            status.append([name, "error", message])
             continue
         kept = 0
         for j in jobs:
-            if not TITLE_RE.search(j["title"].lower()):
+            title = re.sub(r"\s+", " ", str(j.get("title") or "")).strip()
+            loc = re.sub(r"\s+", " ", str(j.get("loc") or "")).strip()
+            url = str(j.get("url") or "").strip()
+            if not title or not url or not TITLE_RE.search(title.lower()):
                 continue
-            if (ONLY_COSTA_RICA or only_cr) and not is_cr(j["loc"]):
+            # Use all public signals, not only the location field.
+            cr_signal = " ".join((loc, title, url))
+            if (ONLY_COSTA_RICA or only_cr) and not is_cr(cr_signal):
                 continue
-            first = seen.setdefault(j["url"], today.isoformat())
-            age = (today - date.fromisoformat(first)).days
-            rows.append(dict(company=name, title=j["title"], loc=j["loc"], url=j["url"],
-                             mode=work_mode(j), region=region(j["loc"]),
-                             new=(not initial and age <= 2)))
+            first = seen.setdefault(url, today.isoformat())
+            try:
+                age = (today - date.fromisoformat(first)).days
+            except ValueError:
+                seen[url], age = today.isoformat(), 0
+            rows.append(dict(company=name, title=title, loc=loc or "Costa Rica (ubicación no detallada)", url=url,
+                             mode=work_mode({"wt": j.get("wt", ""), "loc": loc, "title": title}),
+                             region=region(cr_signal), new=(not initial and age <= 2)))
             kept += 1
         print(f"[ok] {name}: {kept} vacantes")
-        status.append([name, "ok", f"{kept} vacantes de Costa Rica" if kept else "sin vacantes de HR/TA ahora"])
-    order = {"Costa Rica": 0, "LATAM": 1}
-    rows.sort(key=lambda r: (order.get(r["region"], 2), not r["new"], r["company"], r["title"]))
-    sf.write_text(json.dumps(seen))
-    page = TEMPLATE.replace("__DATA__", json.dumps(rows, ensure_ascii=False).replace("</", "<\\/")) \
-                   .replace("__DIR__", json.dumps(DIRECTORY, ensure_ascii=False)).replace("__NDIR__", str(len(DIRECTORY))) \
+        status.append([name, "ok", f"{kept} vacantes HR/TA en Costa Rica" if kept else "sin vacantes HR/TA detectadas"])
+
+    # Exact URL deduplication, then stable ordering.
+    rows = list({r["url"]: r for r in rows}.values())
+    rows.sort(key=lambda r: (not r["new"], r["company"].casefold(), r["title"].casefold()))
+    sf.write_text(json.dumps(seen, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    # Add live state to directory records without changing their visible grouping.
+    directory_ui = []
+    for name, url, province in DIRECTORY:
+        state, detail, final = directory_state.get(name, ["error", "No comprobada", url])
+        directory_ui.append([name, final or url, province, state, detail])
+    template = TEMPLATE.replace('DIR.filter(c=>c[2]==p).map(c=>`<a href="${esc(c[1])}" target=_blank rel=noopener>${esc(c[0])}</a>`)',
+        'DIR.filter(c=>c[2]==p).map(c=>`<a class="${esc(c[3]||\'\')}" title="${esc(c[4]||\'\')}" href="${esc(c[1])}" target=_blank rel=noopener>${esc(c[0])}</a>`)')
+    page = template.replace("__DATA__", json.dumps(rows, ensure_ascii=False).replace("</", "<\\/")) \
+                   .replace("__DIR__", json.dumps(directory_ui, ensure_ascii=False)).replace("__NDIR__", str(len(DIRECTORY))) \
                    .replace("__STATUS__", json.dumps(status, ensure_ascii=False)).replace("__UPDATED__", today.strftime("%d/%m/%Y"))
     (root / "index.html").write_text(page, encoding="utf-8")
     print(f"Total: {len(rows)} -> index.html")
