@@ -41,7 +41,7 @@ COMPANIES = [
     ("greenhouse", "anthropic", "Anthropic", True),
     ("greenhouse", "stripe", "Stripe", True),
     ("greenhouse", "datadog", "Datadog", True),
-    ("greenhouse", "cloudflare", "Cloudflare", True),
+    ("greenhouse", "Veeam", "Veeam", True),
     ("ashby", "openai", "OpenAI", True),
     ("lever", "palantir", "Palantir", True),
 ]
