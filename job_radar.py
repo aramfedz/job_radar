@@ -119,41 +119,85 @@ def region(loc):
 
 TEMPLATE = r"""<!doctype html><html lang=es><meta charset=utf-8>
 <meta name=viewport content="width=device-width,initial-scale=1"><title>Job Radar</title>
+<link rel=preconnect href="https://fonts.googleapis.com"><link rel=preconnect href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@600;700&family=Instrument+Sans:wght@400;500;600&display=swap" rel=stylesheet>
 <style>
-:root{--bg:#f6f6f3;--card:#fff;--fg:#1c1c1a;--mut:#6b6b66;--line:#e4e4de;--acc:#d97757}
-@media(prefers-color-scheme:dark){:root{--bg:#141413;--card:#1f1f1d;--fg:#eeeeea;--mut:#9a9a93;--line:#33332f}}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.4 system-ui,sans-serif}
-.w{max-width:960px;margin:0 auto;padding:20px 16px 60px}
-h1{margin:0;font-size:26px}.sub{color:var(--mut);margin:4px 0 16px}
-.bar{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin-bottom:12px}
-select,input[type=search]{width:100%;padding:10px;border:1px solid var(--line);border-radius:10px;background:var(--card);color:var(--fg);font:inherit}
-.row{display:flex;gap:12px;align-items:center;justify-content:space-between;margin:10px 0;color:var(--mut)}
-label{display:flex;gap:6px;align-items:center;cursor:pointer}
-.j{display:block;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin:8px 0;color:inherit;text-decoration:none}
-.j:hover{border-color:var(--acc)}.t{font-weight:600}.m{color:var(--mut);margin:3px 0 8px}
-.c{display:inline-block;font-size:12px;padding:2px 9px;border-radius:99px;margin-right:6px;background:var(--line)}
-.remote{background:#cfeedb;color:#14532d}.hybrid{background:#ffe7b3;color:#6b4200}.onsite{background:#dbe7ff;color:#1e3a8a}
-.new{background:var(--acc);color:#fff}.e{text-align:center;color:var(--mut);padding:40px}
-</style><div class=w><h1>Job Radar</h1><div class=sub id=sub></div>
-<div class=bar><input type=search id=q placeholder="Buscar puesto o empresa">
-<select id=reg></select><select id=mode></select><select id=co></select></div>
-<div class=row><span id=n></span><label><input type=checkbox id=nw> Solo nuevas</label></div>
-<div id=list></div></div>
+:root{--bg:#eef1ec;--sur:#fff;--ink:#12211b;--mut:#5d6c63;--line:#d9dfd6;--pri:#1b4332;--onpri:#fff;--red:#c8102e;
+--remote:#0b7a5a;--remote-bg:#d8f1e6;--hybrid:#8a5a00;--hybrid-bg:#fbebc4;--onsite:#2b4a8a;--onsite-bg:#dde6fa;--unknown:#5d6c63;--unknown-bg:#e6eae4}
+@media(prefers-color-scheme:dark){:root{--bg:#0f1914;--sur:#16231c;--ink:#e8efe9;--mut:#92a399;--line:#26382e;--pri:#10261b;--onpri:#e8efe9;--red:#ff6b81;
+--remote:#7fe0b6;--remote-bg:#12382a;--hybrid:#f2c867;--hybrid-bg:#3a2d0c;--onsite:#9db8f5;--onsite-bg:#18284a;--unknown:#92a399;--unknown-bg:#1f2d25}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 "Instrument Sans",system-ui,sans-serif}
+button,input,select{font:inherit;color:inherit}:focus-visible{outline:2px solid var(--remote);outline-offset:2px}
+header{background:var(--pri);color:var(--onpri);padding:34px 16px 30px}
+.in{max-width:1040px;margin:0 auto}
+h1{font:700 clamp(30px,5vw,44px)/1.05 "Bricolage Grotesque",system-ui,sans-serif;margin:0;letter-spacing:-.02em}
+header p{margin:8px 0 0;opacity:.8;max-width:56ch}
+.wrap{max-width:1040px;margin:0 auto;padding:20px 16px 60px;display:grid;grid-template-columns:250px 1fr;gap:24px;align-items:start}
+aside{position:sticky;top:16px;display:grid;gap:18px}
+h2{font-size:13px;font-weight:600;color:var(--mut);margin:0 0 6px}
+input[type=search],select{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--sur)}
+.opts{display:grid;gap:2px}
+.opt{display:flex;align-items:center;gap:8px;width:100%;text-align:left;background:none;border:0;border-radius:8px;padding:7px 10px;cursor:pointer}
+.opt b{margin-left:auto;font-weight:500;color:var(--mut);font-variant-numeric:tabular-nums}
+.opt:hover{background:var(--line)}.opt[aria-pressed=true]{background:var(--pri);color:var(--onpri)}.opt[aria-pressed=true] b{color:inherit;opacity:.8}
+.dot{width:9px;height:9px;border-radius:50%;background:var(--c)}
+.remote{--c:var(--remote);--cb:var(--remote-bg)}.hybrid{--c:var(--hybrid);--cb:var(--hybrid-bg)}
+.onsite{--c:var(--onsite);--cb:var(--onsite-bg)}.unknown{--c:var(--unknown);--cb:var(--unknown-bg)}
+.chk{display:flex;gap:8px;align-items:center;cursor:pointer}
+.bar{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;min-height:32px}
+.bar span{font-weight:600}.clr{background:none;border:1px solid var(--line);border-radius:8px;padding:5px 12px;cursor:pointer}
+.job{display:grid;grid-template-columns:1fr auto;gap:4px 14px;background:var(--sur);border:1px solid var(--line);border-left:5px solid var(--c);
+border-radius:6px;padding:13px 16px;margin-bottom:8px;color:inherit;text-decoration:none}
+.job:hover{border-color:var(--c)}
+.jt{font-weight:600;font-size:16px}.jm{color:var(--mut);display:flex;flex-wrap:wrap;gap:2px 16px;grid-column:1}
+.tags{grid-column:2;grid-row:1/3;display:flex;flex-direction:column;align-items:flex-end;gap:5px}
+.tag{font-size:12px;font-weight:600;padding:2px 10px;border-radius:99px;background:var(--cb);color:var(--c)}
+.tag.new{background:var(--red);color:#fff}
+.empty{padding:48px 16px;text-align:center;color:var(--mut)}
+@media(max-width:800px){.wrap{grid-template-columns:1fr}aside{position:static}.opts{display:flex;flex-wrap:wrap;gap:6px}
+.opt{width:auto;border:1px solid var(--line)}.opt[aria-pressed=true]{border-color:var(--pri)}
+.job{grid-template-columns:1fr}.tags{grid-column:1;grid-row:auto;flex-direction:row;flex-wrap:wrap;align-items:center}}
+</style>
+<header><div class=in><h1>Job Radar</h1><p id=sub></p></div></header>
+<div class=wrap>
+<aside>
+<div><h2>Buscar</h2><input type=search id=q placeholder="Puesto, empresa o ciudad"></div>
+<div><h2>Ubicación</h2><div class=opts id=reg></div></div>
+<div><h2>Tipo de trabajo</h2><div class=opts id=mode></div></div>
+<div><h2>Empresa</h2><select id=co></select></div>
+<label class=chk><input type=checkbox id=nw> Solo vacantes nuevas</label>
+</aside>
+<main><div class=bar><span id=n></span><button class=clr id=clr hidden>Limpiar filtros</button></div><div id=list></div></main>
+</div>
 <script>
 const D=__DATA__,ML={remote:"Remoto",hybrid:"Híbrido",onsite:"Presencial",unknown:"No indicado"};
-const $=i=>document.getElementById(i),esc=s=>String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-function fill(el,all,vals,lab){el.innerHTML=`<option value="">${all}</option>`+vals.map(v=>`<option value="${esc(v)}">${esc(lab?lab[v]||v:v)} (${D.filter(r=>r[el.dataset.k]==v).length})</option>`).join("")}
-const u=k=>[...new Set(D.map(r=>r[k]))].sort();
-$("reg").dataset.k="region";$("mode").dataset.k="mode";$("co").dataset.k="company";
-const ro=["Costa Rica","LATAM","Norteamérica","Europa / EMEA","Asia-Pacífico","Global / Remoto","Otros"].filter(x=>u("region").includes(x));
-fill($("reg"),"Todas las ubicaciones",ro);fill($("mode"),"Todos los tipos",["remote","hybrid","onsite","unknown"].filter(x=>u("mode").includes(x)),ML);fill($("co"),"Todas las empresas",u("company"));
-$("sub").textContent=D.length+" vacantes · actualizado __UPDATED__";
-function go(){const q=$("q").value.toLowerCase(),a=$("reg").value,b=$("mode").value,c=$("co").value,n=$("nw").checked;
-const R=D.filter(r=>(!a||r.region==a)&&(!b||r.mode==b)&&(!c||r.company==c)&&(!n||r.new)&&(!q||(r.title+" "+r.company+" "+r.loc).toLowerCase().includes(q)));
-$("n").textContent=R.length+" resultados";
-$("list").innerHTML=R.length?R.map(r=>`<a class=j href="${esc(r.url)}" target=_blank rel=noopener><div class=t>${esc(r.title)}</div><div class=m>${esc(r.company)} · ${esc(r.loc||"Ubicación no indicada")}</div><span class="c ${r.mode}">${ML[r.mode]}</span><span class=c>${esc(r.region)}</span>${r.new?'<span class="c new">Nueva</span>':""}</a>`).join(""):'<div class=e>Sin resultados con esos filtros</div>'}
-["q","reg","mode","co","nw"].forEach(i=>$(i).addEventListener("input",go));go();
-</script></html>"""
+const REG=["Costa Rica","LATAM","Norteamérica","Europa / EMEA","Asia-Pacífico","Global / Remoto","Otros"];
+const S={q:"",region:"",mode:"",company:"",nw:false},$=i=>document.getElementById(i);
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const ok=(r,k)=>(k=="region"||!S.region||r.region==S.region)&&(k=="mode"||!S.mode||r.mode==S.mode)&&(k=="company"||!S.company||r.company==S.company)&&(!S.nw||r.new)&&(!S.q||(r.title+" "+r.company+" "+r.loc).toLowerCase().includes(S.q));
+const has=k=>[...new Set(D.map(r=>r[k]))];
+function opts(id,key,vals,all){const base=D.filter(r=>ok(r,key));
+$(id).innerHTML=`<button class=opt data-k=${key} data-v="" aria-pressed=${!S[key]}>${all}<b>${base.length}</b></button>`+
+vals.map(v=>({v,n:base.filter(r=>r[key]==v).length})).filter(o=>o.n||S[key]==o.v).map(o=>
+`<button class="opt ${key=="mode"?o.v:""}" data-k=${key} data-v="${esc(o.v)}" aria-pressed=${S[key]==o.v}>${key=="mode"?"<i class=dot></i>":""}${esc(ML[o.v]||o.v)}<b>${o.n}</b></button>`).join("")}
+function render(){const R=D.filter(r=>ok(r));
+opts("reg","region",REG.filter(x=>has("region").includes(x)),"Todas");
+opts("mode","mode",["remote","hybrid","onsite","unknown"].filter(x=>has("mode").includes(x)),"Todos");
+const base=D.filter(r=>ok(r,"company"));
+$("co").innerHTML='<option value="">Todas las empresas</option>'+has("company").sort().map(c=>`<option ${S.company==c?"selected":""} value="${esc(c)}">${esc(c)} (${base.filter(r=>r.company==c).length})</option>`).join("");
+$("n").textContent=R.length+(R.length==1?" vacante":" vacantes");
+$("clr").hidden=!(S.q||S.region||S.mode||S.company||S.nw);
+$("list").innerHTML=R.length?R.map(r=>`<a class="job ${r.mode}" href="${esc(r.url)}" target=_blank rel=noopener><div class=jt>${esc(r.title)}</div><div class=jm><span>${esc(r.company)}</span><span>${esc(r.loc||"Ubicación no indicada")}</span></div><div class=tags><span class=tag>${ML[r.mode]}</span>${r.new?'<span class="tag new">Nueva</span>':""}</div></a>`).join("")
+:'<div class=empty>Ninguna vacante coincide con estos filtros. Probá quitar alguno.</div>'}
+$("sub").textContent="Talent Acquisition, Recruiting, People y HR. Actualizado el __UPDATED__.";
+document.querySelector("aside").addEventListener("click",e=>{const b=e.target.closest(".opt");if(!b)return;const k=b.dataset.k,v=b.dataset.v;S[k]=S[k]==v?"":v;render()});
+$("q").addEventListener("input",e=>{S.q=e.target.value.toLowerCase().trim();render()});
+$("co").addEventListener("change",e=>{S.company=e.target.value;render()});
+$("nw").addEventListener("change",e=>{S.nw=e.target.checked;render()});
+$("clr").addEventListener("click",()=>{Object.assign(S,{q:"",region:"",mode:"",company:"",nw:false});$("q").value="";$("nw").checked=false;render()});
+render();
+</script></html>
+"""
 
 def main():
     root = pathlib.Path(__file__).parent
