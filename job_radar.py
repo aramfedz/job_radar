@@ -11,20 +11,96 @@ from urllib.parse import urlparse
 #  greenhouse/lever/ashby/smartrecruiters -> token de la empresa
 #  workday -> pega la URL de su pagina de carreras (termina en .myworkdayjobs.com/...)
 #  solo_costa_rica=True descarta todo lo que no mencione Costa Rica
+# Solo Costa Rica. Ponelo en False para ver tambien otros paises (LATAM separado por pais).
+ONLY_COSTA_RICA = True
+
+# (ats, token_o_url, nombre, solo_costa_rica). Las URLs de Workday NO estan verificadas:
+# si una falla, el log dice [skip] y las demas siguen. Agrega mas pegando la URL de carreras.
 COMPANIES = [
     ("workday", "https://intel.wd1.myworkdayjobs.com/External", "Intel", True),
     ("workday", "https://dell.wd1.myworkdayjobs.com/External", "Dell", True),
     ("workday", "https://salesforce.wd12.myworkdayjobs.com/External_Career_Site", "Salesforce", True),
-    ("greenhouse", "anthropic", "Anthropic", False),
-    ("greenhouse", "stripe", "Stripe", False),
-    ("greenhouse", "gitlab", "GitLab", False),
-    ("greenhouse", "databricks", "Databricks", False),
-    ("greenhouse", "datadog", "Datadog", False),
-    ("greenhouse", "cloudflare", "Cloudflare", False),
-    ("ashby", "openai", "OpenAI", False),
-    ("ashby", "notion", "Notion", False),
-    ("ashby", "ramp", "Ramp", False),
-    ("lever", "palantir", "Palantir", False),
+    ("workday", "https://hp.wd5.myworkdayjobs.com/ExternalCareerSite", "HP", True),
+    ("workday", "https://medtronic.wd1.myworkdayjobs.com/MedtronicCareers", "Medtronic", True),
+    ("workday", "https://abbott.wd5.myworkdayjobs.com/abbottcareers", "Abbott", True),
+    ("workday", "https://edwards.wd5.myworkdayjobs.com/edwardscareers", "Edwards Lifesciences", True),
+    ("workday", "https://stryker.wd1.myworkdayjobs.com/StrykerCareers", "Stryker", True),
+    ("workday", "https://equifax.wd5.myworkdayjobs.com/External", "Equifax", True),
+    ("workday", "https://zoetis.wd5.myworkdayjobs.com/zoetis", "Zoetis", True),
+    ("workday", "https://mastercard.wd1.myworkdayjobs.com/CorporateCareers", "Mastercard", True),
+    ("workday", "https://philips.wd3.myworkdayjobs.com/jobs-and-careers", "Philips", True),
+    ("workday", "https://kyndryl.wd5.myworkdayjobs.com/KyndrylProfessionalCareers", "Kyndryl", True),
+    ("workday", "https://concentrix.wd1.myworkdayjobs.com/Concentrix_Careers", "Concentrix", True),
+    ("greenhouse", "anthropic", "Anthropic", True),
+    ("greenhouse", "stripe", "Stripe", True),
+    ("greenhouse", "datadog", "Datadog", True),
+    ("greenhouse", "cloudflare", "Cloudflare", True),
+    ("ashby", "openai", "OpenAI", True),
+    ("lever", "palantir", "Palantir", True),
+]
+
+# Directorio de empresas con sus paginas de empleo, por provincia.
+DIRECTORY = [
+ ('Roche', 'https://careers.roche.com/', 'Heredia'),
+ ('Intel', 'https://jobs.intel.com/', 'Heredia'),
+ ('Amazon', 'https://www.amazon.jobs/', 'Heredia'),
+ ('IBM', 'https://www.ibm.com/careers', 'Heredia'),
+ ('Hewlett Packard Enterprise', 'https://careers.hpe.com/', 'Heredia'),
+ ('Cisco', 'https://careers.cisco.com/', 'Heredia'),
+ ('Accenture', 'https://www.accenture.com/cr-es/careers', 'Heredia'),
+ ('Equifax', 'https://careers.equifax.com/', 'Heredia'),
+ ('Boston Consulting Group (BCG)', 'https://careers.bcg.com/', 'Heredia'),
+ ('3M', 'https://www.3m.com/3M/en_US/careers-us/', 'Heredia'),
+ ('DHL', 'https://careers.dhl.com/', 'Heredia'),
+ ('Citi', 'https://jobs.citi.com/', 'Heredia'),
+ ('Cargill', 'https://careers.cargill.com/', 'Heredia'),
+ ('Bridgestone', 'https://www.bridgestone.com/corporate/careers/', 'Heredia'),
+ ('Thermo Fisher Scientific', 'https://jobs.thermofisher.com/', 'Heredia'),
+ ('Boston Scientific', 'https://jobs.bostonscientific.com/', 'Alajuela'),
+ ('Smith+Nephew', 'https://careers.smith-nephew.com/', 'Alajuela'),
+ ('Stryker', 'https://careers.stryker.com/', 'Alajuela'),
+ ('Freudenberg Medical', 'https://jobs.freudenberg.com/', 'Alajuela'),
+ ('Panduit', 'https://careers.panduit.com/', 'Alajuela'),
+ ('Samtec', 'https://careers.samtec.com/', 'Alajuela'),
+ ('Abbott', 'https://www.jobs.abbott/', 'Alajuela'),
+ ('Philips', 'https://www.careers.philips.com/', 'Alajuela'),
+ ('Medtronic', 'https://www.medtronic.com/us-en/our-company/careers.html', 'Alajuela'),
+ ('MicroVention / Terumo', 'https://www.terumomedical.com/careers/', 'Alajuela'),
+ ('Viant Medical', 'https://viantmedical.com/careers/', 'Alajuela'),
+ ('CooperCompanies', 'https://www.coopercos.com/careers/', 'Alajuela'),
+ ('Coloplast', 'https://www.coloplast.com/careers/', 'Alajuela'),
+ ('Cardinal Health', 'https://jobs.cardinalhealth.com/', 'Alajuela'),
+ ('Coca-Cola FEMSA', 'https://coca-colafemsa.com/en/join-coca-cola-femsa/apply-here/costa-rica.html', 'Alajuela'),
+ ('Microsoft', 'https://careers.microsoft.com/', 'San José'),
+ ('Deloitte', 'https://www.deloitte.com/cr/es/careers.html', 'San José'),
+ ('PwC', 'https://www.pwc.com/ia/es/carreras.html', 'San José'),
+ ('EY', 'https://www.ey.com/es_cr/careers', 'San José'),
+ ('KPMG', 'https://kpmg.com/cr/es/home/carreras.html', 'San José'),
+ ('Procter & Gamble (P&G)', 'https://www.pgcareers.com/', 'San José'),
+ ('Coca-Cola Company', 'https://careers.coca-colacompany.com/', 'San José'),
+ ('Walmart', 'https://careers.walmart.com/', 'San José'),
+ ('PepsiCo', 'https://www.pepsicojobs.com/', 'San José'),
+ ('GFT', 'https://www.gft.com/int/en/careers', 'San José'),
+ ('Akamai Technologies', 'https://www.akamai.com/careers', 'San José'),
+ ('Concentrix', 'https://jobs.concentrix.com/', 'San José'),
+ ('Foundever', 'https://jobs.foundever.com/', 'San José'),
+ ('Experian', 'https://www.experianplc.com/careers', 'San José'),
+ ('Marriott International', 'https://careers.marriott.com/', 'San José'),
+ ('Edwards Lifesciences', 'https://www.edwards.com/careers', 'Cartago'),
+ ('Hologic', 'https://careers.hologic.com/', 'Cartago'),
+ ('ICU Medical', 'https://www.icumed.com/careers/', 'Cartago'),
+ ('Terumo', 'https://www.terumo.com/careers', 'Cartago'),
+ ('Zollner Elektronik', 'https://www.zollner-electronics.com/career', 'Cartago'),
+ ('Kimberly-Clark', 'https://careers.kimberly-clark.com/', 'Cartago'),
+ ('Holcim', 'https://careers.holcim.com/', 'Cartago'),
+ ('Dos Pinos', 'https://www.dospinos.com/', 'Cartago'),
+ ('Florida Ice and Farm Company (FIFCO)', 'https://www.fifco.com/', 'Cartago'),
+ ('Grupo Purdy', 'https://www.grupopurdy.com/', 'Cartago'),
+ ('Banco Nacional de Costa Rica', 'https://www.bncr.fi.cr/', 'Cartago'),
+ ('BAC Credomatic', 'https://www.baccredomatic.com/es-cr', 'Cartago'),
+ ('Banco de Costa Rica', 'https://www.bancobcr.com/', 'Cartago'),
+ ('Sysco / Mayca', 'https://www.syscocareers.cr/es/buscar-trabajo', 'Cartago'),
+ ('Grupo Monge', 'https://www.grupomonge.com/', 'Cartago'),
 ]
 TITLE_RE = re.compile(
     r"\b(recruit\w*|talent|sourc(er|ing)|hr|hrbp|human resources|human capital|"
@@ -36,18 +112,6 @@ TITLE_RE = re.compile(
 WORKDAY_TERMS = ["recruiter", "talent acquisition", "human resources", "people"]
 # ---------------------------------------------------------------------------
 UA = "job-radar/2.0"
-REGIONS = [
-    ("Costa Rica", re.compile(r"costa rica|heredia|escaz[uú]|ulloa|alajuela")),
-    ("LATAM", re.compile(r"latam|latin america|mexico|m[eé]xico|brazil|brasil|colombia|argentina|"
-                         r"chile|peru|per[uú]|panam[aá]|uruguay|guatemala|ecuador|dominican")),
-    ("Norteamérica", re.compile(r"united states|\b(us|usa|u\.s\.)\b|canada|north america|new york|"
-                                r"california|texas|washington|massachusetts|illinois|georgia")),
-    ("Europa / EMEA", re.compile(r"europe|emea|united kingdom|\buk\b|ireland|germany|spain|portugal|"
-                                 r"france|netherlands|poland|london|dublin|berlin|madrid|lisbon")),
-    ("Asia-Pacífico", re.compile(r"apac|apj|asia|india|japan|singapore|australia|china")),
-    ("Global / Remoto", re.compile(r"remote|remoto|anywhere|global|worldwide")),
-]
-
 def http(url, data=None):
     h = {"User-Agent": UA, "Accept": "application/json"}
     if data is not None:
@@ -110,10 +174,34 @@ def work_mode(j):
         return "onsite"
     return "unknown"
 
+CR_RX = re.compile(r"costa rica|\bcri\b|\bcr\b|heredia|escaz[uú]|ulloa|bel[eé]n|alajuela|coyol|cartago|pavas|la uruca|santa ana|san jos[eé]\s*[,-]\s*(cr|costa)")
+def is_cr(loc):
+    return bool(CR_RX.search(loc.lower()))
+
+CR_PLACES = [("Remoto desde Costa Rica", r"remote|remoto|teletrabajo|home office"),
+             ("Heredia y Belén", r"heredia|ulloa|bel[eé]n"),
+             ("Alajuela y Coyol", r"alajuela|coyol"),
+             ("San José y Escazú", r"san jos[eé]|escaz[uú]|pavas|uruca|santa ana"),
+             ("Cartago", r"cartago")]
+COUNTRIES = [("México", r"mexico|méxico"), ("Brasil", r"brazil|brasil"), ("Colombia", r"colombia"),
+             ("Argentina", r"argentina"), ("Chile", r"\bchile\b"), ("Perú", r"\bperu\b|perú"),
+             ("Panamá", r"panam"), ("Uruguay", r"uruguay"), ("Guatemala", r"guatemala"),
+             ("Ecuador", r"ecuador"), ("República Dominicana", r"dominican"),
+             ("LATAM (regional)", r"latam|latin america"),
+             ("Estados Unidos", r"united states|\b(us|usa|u\.s\.)\b|new york|california|texas|washington"),
+             ("Canadá", r"canada"), ("Europa / EMEA", r"europe|emea|\buk\b|united kingdom|ireland|germany|spain|portugal|france"),
+             ("Asia-Pacífico", r"apac|apj|asia|india|japan|singapore|australia"),
+             ("Global / Remoto", r"remote|remoto|anywhere|global|worldwide")]
+
 def region(loc):
     l = loc.lower()
-    for name, rx in REGIONS:
-        if rx.search(l):
+    if is_cr(l):
+        for name, rx in CR_PLACES:
+            if re.search(rx, l):
+                return name
+        return "Costa Rica (sin ciudad)"
+    for name, rx in COUNTRIES:
+        if re.search(rx, l):
             return name
     return "Otros"
 
@@ -153,6 +241,10 @@ border-radius:6px;padding:13px 16px;margin-bottom:8px;color:inherit;text-decorat
 .tags{grid-column:2;grid-row:1/3;display:flex;flex-direction:column;align-items:flex-end;gap:5px}
 .tag{font-size:12px;font-weight:600;padding:2px 10px;border-radius:99px;background:var(--cb);color:var(--c)}
 .tag.new{background:var(--red);color:#fff}
+.dir{margin-top:28px;border-top:1px solid var(--line);padding-top:14px}.dir summary{cursor:pointer;font-weight:600}
+#dirl h3{font-size:13px;font-weight:600;color:var(--mut);margin:16px 0 6px}
+#dirl .g{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:6px}
+#dirl a{padding:8px 10px;border:1px solid var(--line);border-radius:6px;background:var(--sur);color:inherit;text-decoration:none}#dirl a:hover{border-color:var(--remote)}
 .empty{padding:48px 16px;text-align:center;color:var(--mut)}
 @media(max-width:800px){.wrap{grid-template-columns:1fr}aside{position:static}.opts{display:flex;flex-wrap:wrap;gap:6px}
 .opt{width:auto;border:1px solid var(--line)}.opt[aria-pressed=true]{border-color:var(--pri)}
@@ -167,10 +259,11 @@ border-radius:6px;padding:13px 16px;margin-bottom:8px;color:inherit;text-decorat
 <div><h2>Empresa</h2><select id=co></select></div>
 <label class=chk><input type=checkbox id=nw> Solo vacantes nuevas</label>
 </aside>
-<main><div class=bar><span id=n></span><button class=clr id=clr hidden>Limpiar filtros</button></div><div id=list></div></main>
+<main><div class=bar><span id=n></span><button class=clr id=clr hidden>Limpiar filtros</button></div><div id=list></div>
+<details class=dir><summary>Directorio de carreras: __NDIR__ empresas</summary><div id=dirl></div></details></main>
 </div>
 <script>
-const D=__DATA__,ML={remote:"Remoto",hybrid:"Híbrido",onsite:"Presencial",unknown:"No indicado"};
+const D=__DATA__,DIR=__DIR__,ML={remote:"Remoto",hybrid:"Híbrido",onsite:"Presencial",unknown:"No indicado"};
 const REG=["Costa Rica","LATAM","Norteamérica","Europa / EMEA","Asia-Pacífico","Global / Remoto","Otros"];
 const S={q:"",region:"",mode:"",company:"",nw:false},$=i=>document.getElementById(i);
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -181,7 +274,7 @@ $(id).innerHTML=`<button class=opt data-k=${key} data-v="" aria-pressed=${!S[key
 vals.map(v=>({v,n:base.filter(r=>r[key]==v).length})).filter(o=>o.n||S[key]==o.v).map(o=>
 `<button class="opt ${key=="mode"?o.v:""}" data-k=${key} data-v="${esc(o.v)}" aria-pressed=${S[key]==o.v}>${key=="mode"?"<i class=dot></i>":""}${esc(ML[o.v]||o.v)}<b>${o.n}</b></button>`).join("")}
 function render(){const R=D.filter(r=>ok(r));
-opts("reg","region",REG.filter(x=>has("region").includes(x)),"Todas");
+opts("reg","region",has("region").sort((a,b)=>D.filter(r=>r.region==b).length-D.filter(r=>r.region==a).length),"Todas");
 opts("mode","mode",["remote","hybrid","onsite","unknown"].filter(x=>has("mode").includes(x)),"Todos");
 const base=D.filter(r=>ok(r,"company"));
 $("co").innerHTML='<option value="">Todas las empresas</option>'+has("company").sort().map(c=>`<option ${S.company==c?"selected":""} value="${esc(c)}">${esc(c)} (${base.filter(r=>r.company==c).length})</option>`).join("");
@@ -189,12 +282,13 @@ $("n").textContent=R.length+(R.length==1?" vacante":" vacantes");
 $("clr").hidden=!(S.q||S.region||S.mode||S.company||S.nw);
 $("list").innerHTML=R.length?R.map(r=>`<a class="job ${r.mode}" href="${esc(r.url)}" target=_blank rel=noopener><div class=jt>${esc(r.title)}</div><div class=jm><span>${esc(r.company)}</span><span>${esc(r.loc||"Ubicación no indicada")}</span></div><div class=tags><span class=tag>${ML[r.mode]}</span>${r.new?'<span class="tag new">Nueva</span>':""}</div></a>`).join("")
 :'<div class=empty>Ninguna vacante coincide con estos filtros. Probá quitar alguno.</div>'}
-$("sub").textContent="Talent Acquisition, Recruiting, People y HR. Actualizado el __UPDATED__.";
+$("sub").textContent="Talent Acquisition, Recruiting, People y HR en Costa Rica. Actualizado el __UPDATED__.";
 document.querySelector("aside").addEventListener("click",e=>{const b=e.target.closest(".opt");if(!b)return;const k=b.dataset.k,v=b.dataset.v;S[k]=S[k]==v?"":v;render()});
 $("q").addEventListener("input",e=>{S.q=e.target.value.toLowerCase().trim();render()});
 $("co").addEventListener("change",e=>{S.company=e.target.value;render()});
 $("nw").addEventListener("change",e=>{S.nw=e.target.checked;render()});
 $("clr").addEventListener("click",()=>{Object.assign(S,{q:"",region:"",mode:"",company:"",nw:false});$("q").value="";$("nw").checked=false;render()});
+$("dirl").innerHTML=[...new Set(DIR.map(c=>c[2]))].map(p=>`<h3>${esc(p)}</h3><div class=g>`+DIR.filter(c=>c[2]==p).map(c=>`<a href="${esc(c[1])}" target=_blank rel=noopener>${esc(c[0])}</a>`).join("")+"</div>").join("");
 render();
 </script></html>
 """
@@ -217,7 +311,7 @@ def main():
         for j in jobs:
             if not TITLE_RE.search(j["title"].lower()):
                 continue
-            if only_cr and "costa rica" not in j["loc"].lower():
+            if (ONLY_COSTA_RICA or only_cr) and not is_cr(j["loc"]):
                 continue
             first = seen.setdefault(j["url"], today.isoformat())
             age = (today - date.fromisoformat(first)).days
@@ -230,6 +324,7 @@ def main():
     rows.sort(key=lambda r: (order.get(r["region"], 2), not r["new"], r["company"], r["title"]))
     sf.write_text(json.dumps(seen))
     page = TEMPLATE.replace("__DATA__", json.dumps(rows, ensure_ascii=False).replace("</", "<\\/")) \
+                   .replace("__DIR__", json.dumps(DIRECTORY, ensure_ascii=False)).replace("__NDIR__", str(len(DIRECTORY))) \
                    .replace("__UPDATED__", today.strftime("%d/%m/%Y"))
     (root / "index.html").write_text(page, encoding="utf-8")
     print(f"Total: {len(rows)} -> index.html")
