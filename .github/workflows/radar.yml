@@ -14,8 +14,6 @@ jobs:
         with:
           python-version: "3.12"
       - run: python job_radar.py
-        env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}  # opcional
       - name: Guardar resultados
         run: |
           git config user.name "job-radar"
