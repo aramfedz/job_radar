@@ -4,11 +4,14 @@ paginas de carreras (Greenhouse, Lever, Ashby, SmartRecruiters, Workday)
 y genera index.html con filtros. Solo libreria estandar (Python 3.9+)."""
 import json, re, time, urllib.request, pathlib
 from datetime import date
-from urllib.parse import urlparse
+from urllib.parse import urlparse, quote
 
 # ---- EDITA AQUI ------------------------------------------------------------
 # (ats, token_o_url, nombre, solo_costa_rica)
-#  greenhouse/lever/ashby/smartrecruiters -> token de la empresa
+#  "auto" -> pega la URL de carreras y el script detecta el ATS (Workday, Taleo, Oracle,
+#           Greenhouse, Lever, Ashby, SmartRecruiters, Workable, Recruitee)
+#  taleo/oracle -> pega la URL de carreras (xxx.taleo.net/careersection/... o ...oraclecloud.com/.../sites/...)
+#  greenhouse/lever/ashby/smartrecruiters/workable/recruitee -> token de la empresa
 #  workday -> pega la URL de su pagina de carreras (termina en .myworkdayjobs.com/...)
 #  solo_costa_rica=True descarta todo lo que no mencione Costa Rica
 # Solo Costa Rica. Ponelo en False para ver tambien otros paises (LATAM separado por pais).
@@ -31,6 +34,10 @@ COMPANIES = [
     ("workday", "https://philips.wd3.myworkdayjobs.com/jobs-and-careers", "Philips", True),
     ("workday", "https://kyndryl.wd5.myworkdayjobs.com/KyndrylProfessionalCareers", "Kyndryl", True),
     ("workday", "https://concentrix.wd1.myworkdayjobs.com/Concentrix_Careers", "Concentrix", True),
+    ("taleo", "https://schneider.taleo.net/careersection/7/default.ftl?lang=en", "Schneider Electric", True),
+    ("taleo", "https://teletech.taleo.net/careersection/2/jobsearch.ftl", "TTEC", True),
+    ("taleo", "https://wsp.taleo.net/careersection/globalcareersection/jobsearch.ftl", "WSP", True),
+    ("icims", "https://jobs-auxis.icims.com/jobs/search", "Auxis", True),
     ("greenhouse", "anthropic", "Anthropic", True),
     ("greenhouse", "stripe", "Stripe", True),
     ("greenhouse", "datadog", "Datadog", True),
@@ -101,6 +108,12 @@ DIRECTORY = [
  ('Banco de Costa Rica', 'https://www.bancobcr.com/', 'Cartago'),
  ('Sysco / Mayca', 'https://www.syscocareers.cr/es/buscar-trabajo', 'Cartago'),
  ('Grupo Monge', 'https://www.grupomonge.com/', 'Cartago'),
+ ("Moody's", 'https://careers.moodys.com/', 'Heredia'),
+ ('Auxis', 'https://jobs-auxis.icims.com/jobs/search', 'Heredia'),
+ ('Teradyne', 'https://careers.teradyne.com/', 'Heredia'),
+ ('Schneider Electric', 'https://schneider.taleo.net/careersection/7/default.ftl?lang=en', 'San José'),
+ ('TTEC', 'https://teletech.taleo.net/careersection/2/jobsearch.ftl', 'San José'),
+ ('WSP', 'https://wsp.taleo.net/careersection/globalcareersection/jobsearch.ftl', 'San José'),
 ]
 TITLE_RE = re.compile(
     r"\b(recruit\w*|talent|sourc(er|ing)|hr|hrbp|human resources|human capital|"
@@ -119,7 +132,36 @@ def http(url, data=None):
         data = json.dumps(data).encode()
     return json.load(urllib.request.urlopen(urllib.request.Request(url, data, h), timeout=30))
 
+def text(url):
+    return urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": UA}), timeout=30).read().decode("utf-8", "ignore")
+
+def detect(url):
+    u = urlparse(url)
+    h, parts = u.netloc.lower(), [x for x in u.path.split("/") if x]
+    for key, name in [("myworkdayjobs.com", "workday"), ("taleo.net", "taleo"), ("oraclecloud.com", "oracle")]:
+        if key in h:
+            return name, url
+    for key, name in [("greenhouse.io", "greenhouse"), ("lever.co", "lever"), ("ashbyhq.com", "ashby"),
+                      ("smartrecruiters.com", "smartrecruiters"), ("workable.com", "workable")]:
+        if key in h and parts:
+            return name, parts[0]
+    if "icims.com" in h:
+        return "icims", url
+    if "recruitee.com" in h:
+        return "recruitee", h.split(".")[0]
+    return None, url
+
 def fetch(ats, tok, only_cr):
+    if ats == "auto":
+        ats, tok = detect(tok)
+        if not ats:
+            raise ValueError("ATS no soportado (iCIMS, SuccessFactors y Phenom no tienen API publica)")
+    return fetch_ats(ats, tok, only_cr)
+
+def terms(only_cr):
+    return ["Costa Rica"] if only_cr else WORKDAY_TERMS
+
+def fetch_ats(ats, tok, only_cr):
     if ats == "greenhouse":
         d = http(f"https://boards-api.greenhouse.io/v1/boards/{tok}/jobs")
         return [dict(title=j["title"], loc=(j.get("location") or {}).get("name", ""),
@@ -159,6 +201,88 @@ def fetch(ats, tok, only_cr):
                         title=p["title"], loc=p.get("locationsText", ""), wt="",
                         url=f"https://{host}/en-US/{site}{p['externalPath']}")
                 if len(ps) < 20:
+                    break
+                time.sleep(0.3)
+        return list(found.values())
+    if ats == "taleo":
+        u = urlparse(tok)
+        m = re.search(r"/careersection/([^/]+)/", u.path + "/")
+        base = f"https://{u.netloc}/careersection/{m.group(1) if m else 'ex'}"
+        pm = re.search(r"portal[=:\"' ]+(\d{6,})", text(base + "/jobsearch.ftl?lang=en"))
+        api = f"https://{u.netloc}/careersection/rest/jobboard/searchjobs?lang=en&portal={pm.group(1) if pm else ''}"
+        ids = lambda *n: [{"id": i, "selectedValues": []} for i in n]
+        found = {}
+        for term in terms(only_cr):
+            for page in range(1, 21):
+                d = http(api, {"multilineEnabled": False,
+                               "sortingSelection": {"sortBySelectionParam": "3", "ascendingSortingOrder": "false"},
+                               "fieldData": {"fields": {"KEYWORD": term, "LOCATION": ""}, "valid": True},
+                               "filterSelectionParam": {"searchFilterSelections": ids("POSTING_DATE", "LOCATION", "JOB_FIELD", "JOB_TYPE", "JOB_SCHEDULE", "JOB_LEVEL")},
+                               "advancedSearchFiltersSelectionParam": {"searchFilterSelections": ids("ORGANIZATION", "LOCATION", "JOB_FIELD", "JOB_NUMBER", "URGENT_JOB", "EMPLOYEE_STATUS", "STUDY_LEVEL", "WILL_TRAVEL", "JOB_SHIFT")},
+                               "pageNo": page})
+                items = d.get("requisitionList", [])
+                for it in items:
+                    c = it.get("column", [])
+                    jid = it.get("contestNo") or it.get("jobId")
+                    found[jid] = dict(title=str(c[0]) if c else "", wt="", url=f"{base}/jobdetail.ftl?job={jid}",
+                                      loc=re.sub(r'[\[\]"]', "", str(c[1])) if len(c) > 1 else "")
+                pg = d.get("pagingData", {})
+                if not items or page * pg.get("pageSize", 25) >= pg.get("totalCount", 0):
+                    break
+                time.sleep(0.3)
+        return list(found.values())
+    if ats == "oracle":
+        u = urlparse(tok)
+        m = re.search(r"/sites/([^/]+)", u.path)
+        site = m.group(1) if m else "CX"
+        found = {}
+        for term in terms(only_cr):
+            for off in range(0, 500, 25):
+                fin = f'findReqs;siteNumber={site},keyword="{term}",limit=25,offset={off},sortBy=POSTING_DATES_DESC'
+                d = http(f"https://{u.netloc}/hcmRestApi/resources/latest/recruitingCEJobRequisitions"
+                         f"?onlyData=true&expand=requisitionList&finder={quote(fin, safe='')}")
+                reqs = (d.get("items") or [{}])[0].get("requisitionList", [])
+                for r in reqs:
+                    found[r["Id"]] = dict(title=r["Title"], loc=r.get("PrimaryLocation") or "",
+                                          wt=(r.get("WorkplaceType") or "").replace("_", "-"),
+                                          url=f"https://{u.netloc}/hcmUI/CandidateExperience/en/sites/{site}/job/{r['Id']}")
+                if len(reqs) < 25:
+                    break
+                time.sleep(0.3)
+        return list(found.values())
+    if ats == "workable":
+        out, body = [], {"query": "", "location": [], "department": [], "worktype": [], "remote": []}
+        for _ in range(20):
+            d = http(f"https://apply.workable.com/api/v3/accounts/{tok}/jobs", body)
+            for r in d.get("results", []):
+                l = r.get("location") or {}
+                out.append(dict(title=r["title"], wt=(r.get("workplace") or "").replace("_", "-"),
+                                loc=", ".join(x for x in [l.get("city"), l.get("region"), l.get("country")] if x),
+                                url=f"https://apply.workable.com/{tok}/j/{r['shortcode']}/"))
+            if not d.get("nextPage"):
+                break
+            body = {**body, "token": d["nextPage"]}
+        return out
+    if ats == "recruitee":
+        d = http(f"https://{tok}.recruitee.com/api/offers/")
+        return [dict(title=o["title"], url=o["careers_url"], wt="remote" if o.get("remote") else "",
+                     loc=", ".join(x for x in [o.get("city"), o.get("country")] if x) or o.get("location") or "")
+                for o in d.get("offers", [])]
+    if ats == "icims":
+        base = f"https://{urlparse(tok).netloc}"
+        found = {}
+        for term in terms(only_cr):
+            for pg in range(0, 20):
+                h = text(f"{base}/jobs/search?ss=1&searchKeyword={quote(term)}&in_iframe=1&pr={pg}")
+                links = list(re.finditer(r'<a[^>]+href="([^"]*?/jobs/(\d+)/[^"]*?/job[^"]*)"[^>]*>(.*?)</a>', h, re.S))
+                for m in links:
+                    url, jid, inner = m.groups()
+                    title = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", inner)).strip()
+                    lm = re.search(r"[^<>\n]*(?:Costa Rica|CR-|CRI)[^<>\n]*", h[m.end():m.end() + 1200])
+                    if title and jid not in found:
+                        found[jid] = dict(title=title, wt="", url=url if url.startswith("http") else base + url,
+                                          loc=(lm.group(0).strip() if lm else ""))
+                if not links:
                     break
                 time.sleep(0.3)
         return list(found.values())
@@ -245,6 +369,7 @@ border-radius:6px;padding:13px 16px;margin-bottom:8px;color:inherit;text-decorat
 #dirl h3{font-size:13px;font-weight:600;color:var(--mut);margin:16px 0 6px}
 #dirl .g{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:6px}
 #dirl a{padding:8px 10px;border:1px solid var(--line);border-radius:6px;background:var(--sur);color:inherit;text-decoration:none}#dirl a:hover{border-color:var(--remote)}
+.st{display:grid;grid-template-columns:1.2fr .7fr 2fr;gap:8px;padding:7px 0;border-bottom:1px solid var(--line);font-size:14px}
 .empty{padding:48px 16px;text-align:center;color:var(--mut)}
 @media(max-width:800px){.wrap{grid-template-columns:1fr}aside{position:static}.opts{display:flex;flex-wrap:wrap;gap:6px}
 .opt{width:auto;border:1px solid var(--line)}.opt[aria-pressed=true]{border-color:var(--pri)}
@@ -260,10 +385,11 @@ border-radius:6px;padding:13px 16px;margin-bottom:8px;color:inherit;text-decorat
 <label class=chk><input type=checkbox id=nw> Solo vacantes nuevas</label>
 </aside>
 <main><div class=bar><span id=n></span><button class=clr id=clr hidden>Limpiar filtros</button></div><div id=list></div>
-<details class=dir><summary>Directorio de carreras: __NDIR__ empresas</summary><div id=dirl></div></details></main>
+<details class=dir><summary>Directorio de carreras: __NDIR__ empresas</summary><div id=dirl></div></details>
+<details class=dir><summary>Estado de las fuentes</summary><div id=stl></div></details></main>
 </div>
 <script>
-const D=__DATA__,DIR=__DIR__,ML={remote:"Remoto",hybrid:"Híbrido",onsite:"Presencial",unknown:"No indicado"};
+const D=__DATA__,DIR=__DIR__,ST=__STATUS__,ML={remote:"Remoto",hybrid:"Híbrido",onsite:"Presencial",unknown:"No indicado"};
 const REG=["Costa Rica","LATAM","Norteamérica","Europa / EMEA","Asia-Pacífico","Global / Remoto","Otros"];
 const S={q:"",region:"",mode:"",company:"",nw:false},$=i=>document.getElementById(i);
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -289,6 +415,7 @@ $("co").addEventListener("change",e=>{S.company=e.target.value;render()});
 $("nw").addEventListener("change",e=>{S.nw=e.target.checked;render()});
 $("clr").addEventListener("click",()=>{Object.assign(S,{q:"",region:"",mode:"",company:"",nw:false});$("q").value="";$("nw").checked=false;render()});
 $("dirl").innerHTML=[...new Set(DIR.map(c=>c[2]))].map(p=>`<h3>${esc(p)}</h3><div class=g>`+DIR.filter(c=>c[2]==p).map(c=>`<a href="${esc(c[1])}" target=_blank rel=noopener>${esc(c[0])}</a>`).join("")+"</div>").join("");
+$("stl").innerHTML=ST.map(x=>`<div class=st><span>${esc(x[0])}</span><span>${x[1]=="ok"?"Activa":"Con error"}</span><span>${esc(x[2])}</span></div>`).join("");
 render();
 </script></html>
 """
@@ -300,12 +427,13 @@ def main():
     seen = json.loads(sf.read_text()) if sf.exists() else {}
     if isinstance(seen, list):
         seen = {u: date.today().isoformat() for u in seen}
-    today, rows = date.today(), []
+    today, rows, status = date.today(), [], []
     for ats, tok, name, only_cr in COMPANIES:
         try:
             jobs = fetch(ats, tok, only_cr)
         except Exception as e:
             print(f"[skip] {name}: {e}")
+            status.append([name, "error", str(e)[:90]])
             continue
         kept = 0
         for j in jobs:
@@ -320,12 +448,13 @@ def main():
                              new=(not initial and age <= 2)))
             kept += 1
         print(f"[ok] {name}: {kept} vacantes")
+        status.append([name, "ok", f"{kept} vacantes de Costa Rica" if kept else "sin vacantes de HR/TA ahora"])
     order = {"Costa Rica": 0, "LATAM": 1}
     rows.sort(key=lambda r: (order.get(r["region"], 2), not r["new"], r["company"], r["title"]))
     sf.write_text(json.dumps(seen))
     page = TEMPLATE.replace("__DATA__", json.dumps(rows, ensure_ascii=False).replace("</", "<\\/")) \
                    .replace("__DIR__", json.dumps(DIRECTORY, ensure_ascii=False)).replace("__NDIR__", str(len(DIRECTORY))) \
-                   .replace("__UPDATED__", today.strftime("%d/%m/%Y"))
+                   .replace("__STATUS__", json.dumps(status, ensure_ascii=False)).replace("__UPDATED__", today.strftime("%d/%m/%Y"))
     (root / "index.html").write_text(page, encoding="utf-8")
     print(f"Total: {len(rows)} -> index.html")
 
