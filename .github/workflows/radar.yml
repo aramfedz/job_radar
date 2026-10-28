@@ -1,0 +1,25 @@
+name: Job Radar
+on:
+  schedule:
+    - cron: "0 13 * * *"   # todos los dias, 7am hora de Costa Rica
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python job_radar.py
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}  # opcional
+      - name: Guardar resultados
+        run: |
+          git config user.name "job-radar"
+          git config user.email "bot@users.noreply.github.com"
+          git add index.html seen.json
+          git commit -m "update" || echo "sin cambios"
+          git push
