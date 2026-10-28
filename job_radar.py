@@ -6,7 +6,7 @@ import json, re, time, urllib.request, urllib.error, pathlib, html, socket
 from html.parser import HTMLParser
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date
-from urllib.parse import urlparse, quote
+from urllib.parse import urlparse, quote, urljoin, urlunparse
 
 # ---- EDITA AQUI ------------------------------------------------------------
 # (ats, token_o_url, nombre, solo_costa_rica)
@@ -117,6 +117,10 @@ DIRECTORY = [
  ('TTEC', 'https://teletech.taleo.net/careersection/2/jobsearch.ftl', 'San José'),
  ('WSP', 'https://wsp.taleo.net/careersection/globalcareersection/jobsearch.ftl', 'San José'),
 ]
+
+# Additional employers with Costa Rica operations or Costa Rica-accessible career sites.
+DIRECTORY += [('Adobe', 'https://careers.adobe.com/', 'San Jose'), ('AstraZeneca', 'https://careers.astrazeneca.com/', 'San Jose'), ('Bayer', 'https://career.bayer.com/', 'San Jose'), ('Baxter', 'https://jobs.baxter.com/', 'Heredia'), ('Becton Dickinson (BD)', 'https://jobs.bd.com/', 'Alajuela'), ('Boehringer Ingelheim', 'https://jobs.boehringer-ingelheim.com/', 'San Jose'), ('Bristol Myers Squibb', 'https://careers.bms.com/', 'San Jose'), ('Johnson & Johnson', 'https://careers.jnj.com/', 'San Jose'), ('Pfizer', 'https://www.pfizer.com/about/careers', 'San Jose'), ('GSK', 'https://jobs.gsk.com/', 'San Jose'), ('Novartis', 'https://www.novartis.com/careers', 'San Jose'), ('Sanofi', 'https://jobs.sanofi.com/', 'San Jose'), ('Merck', 'https://jobs.merck.com/', 'San Jose'), ('MSD', 'https://jobs.msd.com/', 'San Jose'), ('Lilly', 'https://careers.lilly.com/', 'San Jose'), ('Align Technology', 'https://jobs.aligntech.com/', 'Heredia'), ('ResMed', 'https://careers.resmed.com/', 'Alajuela'), ('AbbVie', 'https://careers.abbvie.com/', 'San Jose'), ('Amgen', 'https://careers.amgen.com/', 'San Jose'), ('BioMarin', 'https://careers.biomarin.com/', 'San Jose'), ('Oracle', 'https://www.oracle.com/careers/', 'San Jose'), ('SAP', 'https://jobs.sap.com/', 'Heredia'), ('VMware by Broadcom', 'https://careers.broadcom.com/', 'Heredia'), ('Broadcom', 'https://careers.broadcom.com/', 'Heredia'), ('NVIDIA', 'https://www.nvidia.com/en-us/about-nvidia/careers/', 'San Jose'), ('ServiceNow', 'https://careers.servicenow.com/', 'Heredia'), ('Splunk', 'https://www.splunk.com/en_us/careers.html', 'San Jose'), ('Databricks', 'https://www.databricks.com/company/careers', 'San Jose'), ('Snowflake', 'https://careers.snowflake.com/', 'San Jose'), ('Twilio', 'https://www.twilio.com/company/jobs', 'Remoto Costa Rica'), ('GitLab', 'https://about.gitlab.com/jobs/', 'Remoto Costa Rica'), ('Zapier', 'https://zapier.com/jobs', 'Remoto Costa Rica'), ('Automattic', 'https://automattic.com/work-with-us/', 'Remoto Costa Rica'), ('Canonical', 'https://canonical.com/careers', 'Remoto Costa Rica'), ('Cloudflare', 'https://www.cloudflare.com/careers/jobs/', 'Remoto Costa Rica'), ('Okta', 'https://www.okta.com/company/careers/', 'Remoto Costa Rica'), ('Elastic', 'https://www.elastic.co/careers', 'Remoto Costa Rica'), ('Red Hat', 'https://www.redhat.com/en/jobs', 'San Jose'), ('Cloudera', 'https://www.cloudera.com/careers.html', 'San Jose'), ('DXC Technology', 'https://careers.dxc.com/', 'Heredia'), ('Genpact', 'https://www.genpact.com/careers', 'Heredia'), ('Cognizant', 'https://careers.cognizant.com/', 'Heredia'), ('Infosys', 'https://www.infosys.com/careers/', 'San Jose'), ('HCLTech', 'https://www.hcltech.com/careers', 'San Jose'), ('NTT DATA', 'https://careers.nttdata.com/', 'Heredia'), ('Capgemini', 'https://www.capgemini.com/careers/', 'San Jose'), ('Globant', 'https://career.globant.com/', 'San Jose'), ('Encora', 'https://careers.encora.com/', 'San Jose'), ('Publicis Sapient', 'https://careers.publicissapient.com/', 'San Jose'), ('Tek Experts', 'https://www.tek-experts.com/careers/', 'Heredia'), ('TransUnion', 'https://www.transunion.com/careers', 'Heredia'), ('Western Union', 'https://careers.westernunion.com/', 'San Jose'), ('Visa', 'https://corporate.visa.com/en/careers.html', 'San Jose'), ('American Express', 'https://www.americanexpress.com/en-us/careers/', 'San Jose'), ('JPMorgan Chase', 'https://careers.jpmorgan.com/', 'San Jose'), ('Scotiabank', 'https://jobs.scotiabank.com/', 'San Jose'), ('Davivienda', 'https://www.davivienda.com/', 'San Jose'), ('Banco Popular de Costa Rica', 'https://www.bancopopular.fi.cr/', 'San Jose'), ('Banco Promerica', 'https://www.promerica.fi.cr/', 'San Jose'), ('Banco Lafise', 'https://www.lafise.com/', 'San Jose'), ('Coopeservidores', 'https://www.coopeservidores.fi.cr/', 'San Jose'), ('Grupo Mutual', 'https://www.grupomutual.fi.cr/', 'Alajuela'), ('INS Costa Rica', 'https://www.grupoins.com/', 'San Jose'), ('ASSA Compania de Seguros', 'https://www.assanet.com/', 'San Jose'), ('Pan-American Life (PALIG)', 'https://www.palig.com/careers', 'San Jose'), ('Sagicor Costa Rica', 'https://www.sagicor.com/en-CR/', 'San Jose'), ('Uber', 'https://www.uber.com/global/en/careers/', 'Heredia'), ('DiDi', 'https://careers.didiglobal.com/', 'San Jose'), ('PedidosYa', 'https://careers.deliveryhero.com/', 'San Jose'), ('Delivery Hero', 'https://careers.deliveryhero.com/', 'San Jose'), ('Maersk', 'https://www.maersk.com/careers', 'San Jose'), ('FedEx', 'https://careers.fedex.com/', 'San Jose'), ('UPS', 'https://www.jobs-ups.com/', 'San Jose'), ('Expeditors', 'https://careers.expeditors.com/', 'San Jose'), ('Hellmann Worldwide Logistics', 'https://www.hellmann.com/en/career', 'San Jose'), ('Kuehne+Nagel', 'https://jobs.kuehne-nagel.com/', 'Heredia'), ('DP World', 'https://www.dpworld.com/careers', 'Limon'), ('APM Terminals', 'https://www.apmterminals.com/en/careers', 'Limon'), ('CMA CGM', 'https://www.cmacgm-group.com/en/talents/join-us', 'San Jose'), ('Dole', 'https://careers.dole.com/', 'Limon'), ('Unilever', 'https://careers.unilever.com/', 'San Jose'), ('Nestle', 'https://www.nestle.com/jobs', 'San Jose'), ('Mondelēz International', 'https://www.mondelezinternational.com/careers/', 'San Jose'), ('Kraft Heinz', 'https://careers.kraftheinz.com/', 'San Jose'), ('Colgate-Palmolive', 'https://jobs.colgate.com/', 'San Jose'), ('Reckitt', 'https://careers.reckitt.com/', 'San Jose'), ('Henkel', 'https://www.henkel.com/careers', 'San Jose'), ("L'Oreal", 'https://careers.loreal.com/', 'San Jose'), ('BAT', 'https://careers.bat.com/', 'Heredia'), ('Philip Morris International', 'https://www.pmi.com/careers', 'San Jose'), ('Heineken', 'https://careers.theheinekencompany.com/', 'San Jose'), ('Pernod Ricard', 'https://pernod-ricard.com/en/careers', 'San Jose'), ('Diageo', 'https://www.diageo.com/en/careers', 'San Jose'), ('Bimbo', 'https://www.grupobimbo.com/es/bolsa-de-trabajo', 'San Jose'), ('Sigma Alimentos', 'https://www.sigma-alimentos.com/careers/', 'San Jose'), ('Cargill Protein Latin America', 'https://careers.cargill.com/', 'Heredia'), ('Emerson', 'https://www.emerson.com/en-us/careers', 'San Jose'), ('Honeywell', 'https://careers.honeywell.com/', 'San Jose'), ('Siemens', 'https://jobs.siemens.com/', 'San Jose'), ('ABB', 'https://careers.abb/global/en', 'San Jose'), ('Eaton', 'https://jobs.eaton.com/', 'San Jose'), ('Embraer', 'https://embraer.com/global/en/careers', 'San Jose'), ('Gensler', 'https://www.gensler.com/careers', 'San Jose'), ('AECOM', 'https://aecom.com/careers/', 'San Jose'), ('Jacobs', 'https://careers.jacobs.com/', 'San Jose'), ('Arcadis', 'https://careers.arcadis.com/', 'San Jose'), ('Autodesk', 'https://www.autodesk.com/careers', 'San Jose'), ('Motorola Solutions', 'https://www.motorolasolutions.com/en_us/about/careers.html', 'San Jose'), ('Ericsson', 'https://www.ericsson.com/en/careers', 'San Jose'), ('Nokia', 'https://www.nokia.com/about-us/careers/', 'San Jose'), ('Liberty Latin America', 'https://careers.lla.com/', 'San Jose'), ('Millicom Tigo', 'https://www.millicom.com/careers/', 'San Jose'), ('Veeam Software', 'https://careers.veeam.com/', 'San Jose'), ('Smith & Nephew', 'https://careers.smith-nephew.com/', 'Alajuela'), ('Zoetis', 'https://careers.zoetis.com/', 'San Jose'), ('Mastercard', 'https://careers.mastercard.com/', 'San Jose'), ('Kyndryl', 'https://www.kyndryl.com/us/en/careers', 'Heredia'), ('Salesforce', 'https://careers.salesforce.com/', 'San Jose'), ('Dell Technologies', 'https://jobs.dell.com/', 'Heredia'), ('HP Inc.', 'https://jobs.hp.com/', 'Heredia'), ('Schlumberger SLB', 'https://careers.slb.com/', 'San Jose'), ('Baker Hughes', 'https://careers.bakerhughes.com/', 'San Jose'), ('Prysmian Group', 'https://www.prysmiangroup.com/en/people-and-careers', 'Heredia'), ('Huntsman', 'https://www.huntsman.com/careers', 'Heredia'), ('Clorox', 'https://www.thecloroxcompany.com/careers/', 'San Jose'), ('The Walt Disney Company', 'https://www.disneycareers.com/', 'San Jose'), ('Sony', 'https://www.sonyjobs.com/', 'San Jose'), ('Samsung', 'https://www.samsung.com/us/careers/', 'San Jose'), ('LG Electronics', 'https://www.lg.com/global/careers', 'San Jose'), ('Grupo Nación', 'https://www.nacion.com/', 'San Jose'), ('Televisora de Costa Rica', 'https://www.teletica.com/', 'San Jose'), ('Universidad de Costa Rica', 'https://www.ucr.ac.cr/', 'San Jose'), ('Tecnológico de Costa Rica', 'https://www.tec.ac.cr/', 'Cartago'), ('Universidad Nacional', 'https://www.una.ac.cr/', 'Heredia')]
+assert len(DIRECTORY) == 200 and len({x[0].casefold() for x in DIRECTORY}) == 200
 TITLE_RE = re.compile(
     r"\b(recruit\w*|talent|sourc(er|ing)|hr|hrbp|human resources|human capital|"
     r"people (partner|operations|ops|business|team|experience|analytics|success|and culture|& culture)|"
@@ -210,27 +214,57 @@ def detect(url, body=""):
     return None, url
 
 
-def discover(url):
-    """Resolve redirects and inspect a career page for a supported ATS."""
+def locale_variants(url):
+    """Return ordered Costa Rica language variants without duplicating requests."""
+    u = urlparse(url)
+    base_path = u.path.rstrip("/")
+    locale_re = re.compile(r"/(?:cr/(?:en|es)|(?:en|es)/cr|cr-(?:en|es)|(?:en|es)-cr)(?=/|$)", re.I)
+    stripped = locale_re.sub("", base_path).rstrip("/")
+    paths = [base_path, f"{stripped}/cr/en", f"{stripped}/cr/es",
+             f"{stripped}/en/cr", f"{stripped}/es/cr",
+             f"{stripped}/en-cr", f"{stripped}/es-cr",
+             f"{stripped}/cr-en", f"{stripped}/cr-es"]
+    out=[]
+    for path in paths:
+        candidate=urlunparse((u.scheme or "https",u.netloc,path or "/",u.params,u.query,u.fragment))
+        if candidate not in out: out.append(candidate)
+    return out
+
+
+def discover_one(url):
     body, final_url, status = text(url, timeout=20)
     ats, token = detect(final_url, body)
     if ats:
         return ats, token, final_url, status
-    parser = LinkParser()
-    parser.feed(body[:1500000])
-    from urllib.parse import urljoin
-    candidates = []
+    parser = LinkParser(); parser.feed(body[:1500000])
+    candidates=[]
     for href, label in parser.links:
-        absolute = urljoin(final_url, href)
-        a, t = detect(absolute)
-        if a:
-            candidates.append((a, t, absolute))
+        if not href: continue
+        absolute=urljoin(final_url, href)
+        a,t=detect(absolute)
+        if a: candidates.append((a,t,absolute))
     if candidates:
-        # Prefer full ATS job boards over single job links.
-        candidates.sort(key=lambda x: ("/job/" in x[2].lower(), len(x[2])))
-        a, t, found_url = candidates[0]
-        return a, t, found_url, status
+        candidates.sort(key=lambda x:("/job/" in x[2].lower(),len(x[2])))
+        a,t,found_url=candidates[0]
+        return a,t,found_url,status
     return None, final_url, final_url, status
+
+
+def discover(url):
+    """Try canonical URL and CR language variants, stopping at first detected ATS."""
+    first_accessible=None
+    errors=[]
+    for candidate in locale_variants(url):
+        try:
+            result=discover_one(candidate)
+            if first_accessible is None: first_accessible=result
+            if result[0]:
+                return (*result, candidate)
+        except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError, socket.timeout) as exc:
+            errors.append(f"{candidate}: {type(exc).__name__}")
+    if first_accessible:
+        return (*first_accessible, url)
+    raise urllib.error.URLError("; ".join(errors[:3]) or "No accessible variant")
 
 def fetch(ats, tok, only_cr):
     if ats == "auto":
@@ -489,7 +523,7 @@ border-radius:6px;padding:13px 16px;margin-bottom:8px;color:inherit;text-decorat
 .dir{margin-top:28px;border-top:1px solid var(--line);padding-top:14px}.dir summary{cursor:pointer;font-weight:600}
 #dirl h3{font-size:13px;font-weight:600;color:var(--mut);margin:16px 0 6px}
 #dirl .g{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:6px}
-#dirl a{position:relative;padding:8px 10px;border:1px solid var(--line);border-radius:6px;background:var(--sur);color:inherit;text-decoration:none}#dirl a:hover{border-color:var(--remote)} #dirl a.ok:after,#dirl a.error:after{content:"";position:absolute;right:8px;top:12px;width:7px;height:7px;border-radius:50%;background:var(--remote)}#dirl a.error:after{background:var(--red)}
+#dirl a{position:relative;padding:8px 10px;border:1px solid var(--line);border-radius:6px;background:var(--sur);color:inherit;text-decoration:none}#dirl a:hover{border-color:var(--remote)} #dirl a.detected:after,#dirl a.accessible:after,#dirl a.unsupported:after,#dirl a.error:after{content:"";position:absolute;right:8px;top:12px;width:7px;height:7px;border-radius:50%;background:var(--remote)}#dirl a.accessible:after{background:#d49b00}#dirl a.unsupported:after{background:#7b8791}#dirl a.error:after{background:var(--red)} .legend{display:flex;flex-wrap:wrap;gap:12px;margin:10px 0;color:var(--mut);font-size:12px}.legend i{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:5px}
 .st{display:grid;grid-template-columns:1.2fr .7fr 2fr;gap:8px;padding:7px 0;border-bottom:1px solid var(--line);font-size:14px}
 .empty{padding:48px 16px;text-align:center;color:var(--mut)}
 @media(max-width:800px){.wrap{grid-template-columns:1fr}aside{position:static}.opts{display:flex;flex-wrap:wrap;gap:6px}
@@ -506,7 +540,7 @@ border-radius:6px;padding:13px 16px;margin-bottom:8px;color:inherit;text-decorat
 <label class=chk><input type=checkbox id=nw> Solo vacantes nuevas</label>
 </aside>
 <main><div class=bar><span id=n></span><button class=clr id=clr hidden>Limpiar filtros</button></div><div id=list></div>
-<details class=dir><summary>Directorio de carreras: __NDIR__ empresas</summary><div id=dirl></div></details>
+<details class=dir><summary>Directorio de carreras: __NDIR__ empresas</summary><div class=legend><span><i style="background:#0b7a5a"></i>ATS detectado</span><span><i style="background:#d49b00"></i>Página accesible</span><span><i style="background:#7b8791"></i>Sin conector</span><span><i style="background:#c8102e"></i>Error</span></div><div id=dirl></div></details>
 <details class=dir><summary>Estado de las fuentes</summary><div id=stl></div></details></main>
 </div>
 <script>
@@ -536,7 +570,7 @@ $("co").addEventListener("change",e=>{S.company=e.target.value;render()});
 $("nw").addEventListener("change",e=>{S.nw=e.target.checked;render()});
 $("clr").addEventListener("click",()=>{Object.assign(S,{q:"",region:"",mode:"",company:"",nw:false});$("q").value="";$("nw").checked=false;render()});
 $("dirl").innerHTML=[...new Set(DIR.map(c=>c[2]))].map(p=>`<h3>${esc(p)}</h3><div class=g>`+DIR.filter(c=>c[2]==p).map(c=>`<a href="${esc(c[1])}" target=_blank rel=noopener>${esc(c[0])}</a>`).join("")+"</div>").join("");
-$("stl").innerHTML=ST.map(x=>`<div class=st><span>${esc(x[0])}</span><span>${x[1]=="ok"?"Activa":"Con error"}</span><span>${esc(x[2])}</span></div>`).join("");
+$("stl").innerHTML=ST.map(x=>`<div class=st><span>${esc(x[0])}</span><span>${({ok:"Activa",detected:"ATS detectado",accessible:"Página accesible",unsupported:"Sin conector",error:"Con error"}[x[1]]||x[1])}</span><span>${esc(x[2])}</span></div>`).join("");
 render();
 </script></html>
 """
@@ -551,13 +585,15 @@ def build_sources():
     def probe(entry):
         name, url, province = entry
         try:
-            ats, token, final, code = discover(url)
-            return entry, ats, token, final, "ok", f"HTTP {code}" + (f" · {ats}" if ats else " · ATS no detectado")
+            ats, token, final, code, tested = discover(url)
+            state = "detected" if ats else "accessible"
+            detail = f"HTTP {code}" + (f" · {ats} · variante {tested}" if ats else " · accesible, ATS no detectado")
+            return entry, ats, token, final, state, detail
         except Exception as exc:
             return entry, None, url, url, "error", type(exc).__name__ + ": " + str(exc)[:70]
 
     # Concurrent probes keep a country-wide directory practical.
-    with ThreadPoolExecutor(max_workers=8) as pool:
+    with ThreadPoolExecutor(max_workers=12) as pool:
         futures = [pool.submit(probe, entry) for entry in DIRECTORY]
         for future in as_completed(futures):
             entry, ats, token, final, state, detail = future.result()
